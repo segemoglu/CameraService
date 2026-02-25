@@ -25,7 +25,7 @@ namespace CameraService.Features
             // 2. Başarılıysa diske kaydet
             if (imageBytes != null && imageBytes.Length > 0)
             {
-                await _imageStorage.SaveImageAsync(imageBytes);
+                await _imageStorage.SaveImageAsync(imageBytes, barcode);
             }
         }
     }

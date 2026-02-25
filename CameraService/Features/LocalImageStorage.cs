@@ -16,14 +16,14 @@ namespace CameraService.Features
             _logger = logger;
         }
 
-        public async Task SaveImageAsync(byte[] imageBytes)
+        public async Task SaveImageAsync(byte[] imageBytes, string barcode)
         {
             DateTime now = DateTime.Now;
             string targetFolderPath = Path.Combine(_baseFolderPath, now.ToString("yyyy"), now.ToString("MM"), now.ToString("dd"));
 
             Directory.CreateDirectory(targetFolderPath);
 
-            string fileName = Path.Combine(targetFolderPath, $"{now:HH-mm-ss}.jpg");
+            string fileName = Path.Combine(targetFolderPath, $"{barcode}_Station26-TopCamera_{now:dd-MM-yyyy HH-mm-ss}.jpg");
             await File.WriteAllBytesAsync(fileName, imageBytes);
 
             _logger.LogInformation($"Snapshot başarıyla kaydedildi: {fileName}");

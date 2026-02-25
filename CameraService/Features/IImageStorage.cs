@@ -8,6 +8,6 @@ namespace CameraService.Features
 {
     public interface IImageStorage
     {
-        Task SaveImageAsync(byte[] imageBytes);
+        Task SaveImageAsync(byte[] imageBytes, string barcode);
     }
 }
