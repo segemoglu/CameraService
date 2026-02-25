@@ -1,5 +1,5 @@
+using Microsoft.Data.SqlClient;
 using System.Net;
-using System.Net.Http;
 
 namespace CameraService
 {
@@ -7,12 +7,11 @@ namespace CameraService
     {
         private readonly ILogger<Worker> _logger;
         private readonly HttpClient _httpClient;
+        private readonly string _connectionString = @"Server=(localdb)\MSSQLLocalDB;Database=TestDB;Integrated Security=true;TrustServerCertificate=True;";
 
         public Worker(ILogger<Worker> logger)
         {
             _logger = logger;
-
-            // HttpClient program çalýþtýðýnda SADECE 1 KERE ayaða kalkar
             var handler = new HttpClientHandler()
             {
                 Credentials = new NetworkCredential("YOUR_CAMERA_USERNAME", "YOUR_CAMERA_PASSWORD")
@@ -22,26 +21,76 @@ namespace CameraService
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            // Servis baþlarken dinlemeyi baþlat
+            SqlDependency.Start(_connectionString);
+            DinlemeyeKayitOl();
+            _logger.LogInformation("BarcodeTracking tablosu dinleniyor...");
+
+            // Sonsuz bekleme: Olay (Event) tabanlý çalýþtýðýmýz için döngüye gerek yok, servisi açýk tutar.
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+
+        public override async Task StopAsync(CancellationToken stoppingToken)
+        {
+            // Servis durduðunda dinlemeyi kapat
+            SqlDependency.Stop(_connectionString);
+            await base.StopAsync(stoppingToken);
+        }
+
+        private void DinlemeyeKayitOl()
+        {
+            using (SqlConnection conn = new SqlConnection(_connectionString))
             {
-                // TODO: Burada veritabanýný kontrol edeceðiz (isTriggered ve barcode alacaðýz)
-                bool isTriggered = true; // Þimdilik sahte deðer
-                string barcode = "12345";
+                conn.Open();
+                string sql = "SELECT Id, barcode_no, pcl_in, pcl_out, pc_in, pc_out, InsertTime FROM dbo.BarcodeTracking";
 
-                if (isTriggered)
+                using (SqlCommand cmd = new SqlCommand(sql, conn))
                 {
-                    // Sadece tetiklendiðinde fotoðraf çek
-                    await GetSnapshotAsync();
+                    SqlDependency dependency = new SqlDependency(cmd);
+                    dependency.OnChange += Dependency_OnChange;
 
-                    // TODO: Veritabanýný 0'a çek
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                    }
                 }
-
-                await Task.Delay(5000, stoppingToken);
             }
         }
 
+        private void Dependency_OnChange(object sender, SqlNotificationEventArgs e)
+        {
+            if (e.Type == SqlNotificationType.Change)
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    // Fotoðraf ismi için barkodu da (barcode_no) sorguya ekledim
+                    string sql = "SELECT TOP 1 pcl_in, barcode_no FROM dbo.BarcodeTracking ORDER BY Id DESC";
 
-        private async Task GetSnapshotAsync()
+                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            bool pcl_in = reader["pcl_in"] != DBNull.Value && (bool)reader["pcl_in"];
+                            string barcode = reader["barcode_no"]?.ToString() ?? "Bilinmeyen";
+
+                            if (pcl_in) // Eðer 1 (True) ise fotoðraf çek
+                            {
+                                _logger.LogInformation($"pcl_in deðeri 1! Snapshot baþlatýlýyor. Barkod: {barcode}");
+
+                                // Metodu tetikler ve bekletmeden çalýþmasýný saðlar
+                                _ = GetSnapshotAsync(barcode);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Bir sonraki deðiþikliði yakalamak için yeniden kayýt ol
+            DinlemeyeKayitOl();
+        }
+
+        private async Task GetSnapshotAsync(string barcode)
         {
             string url = "http://YOUR_CAMERA_IP/cgi-bin/snapshot.cgi";
             try
@@ -52,8 +101,9 @@ namespace CameraService
                 {
                     byte[] imageBytes = await response.Content.ReadAsByteArrayAsync();
 
-                    // Dosya ismini barkod ve anlýk saat ile benzersiz yapýyoruz
                     string folderPath = @"C:\Users\it.stajyer\Desktop\Fotoðraflar";
+
+                    // Dosya ismini Barkod_SaatDakikaSaniye.jpg formatýnda kaydeder
                     string fileName = Path.Combine(folderPath, $"{DateTime.Now:HH-mm-ss}.jpg");
 
                     await File.WriteAllBytesAsync(fileName, imageBytes);
