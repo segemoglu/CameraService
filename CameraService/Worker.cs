@@ -42,7 +42,8 @@ namespace CameraService
             using (SqlConnection conn = new SqlConnection(_connectionString))
             {
                 conn.Open();
-                string sql = "SELECT Id, barcode_no, pcl_in, pcl_out, pc_in, pc_out, InsertTime FROM dbo.BarcodeTracking";
+                // Sütun isimleri güncellendi: plc_in, plc_out
+                string sql = "SELECT Id, barcode_no, plc_in, plc_out, pc_in, pc_out, InsertTime FROM dbo.BarcodeTracking";
 
                 using (SqlCommand cmd = new SqlCommand(sql, conn))
                 {
@@ -63,20 +64,21 @@ namespace CameraService
                 using (SqlConnection conn = new SqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Fotoðraf ismi için barkodu da (barcode_no) sorguya ekledim
-                    string sql = "SELECT TOP 1 pcl_in, barcode_no FROM dbo.BarcodeTracking ORDER BY Id DESC";
+                    // Sütun ismi güncellendi: plc_in
+                    string sql = "SELECT TOP 1 plc_in, barcode_no FROM dbo.BarcodeTracking ORDER BY Id DESC";
 
                     using (SqlCommand cmd = new SqlCommand(sql, conn))
                     using (SqlDataReader reader = cmd.ExecuteReader())
                     {
                         if (reader.Read())
                         {
-                            bool pcl_in = reader["pcl_in"] != DBNull.Value && (bool)reader["pcl_in"];
+                            // Deðiþken ve okuma ismi güncellendi: plc_in
+                            bool plc_in = reader["plc_in"] != DBNull.Value && (bool)reader["plc_in"];
                             string barcode = reader["barcode_no"]?.ToString() ?? "Bilinmeyen";
 
-                            if (pcl_in) // Eðer 1 (True) ise fotoðraf çek
+                            if (plc_in) // Eðer 1 (True) ise fotoðraf çek
                             {
-                                _logger.LogInformation($"pcl_in deðeri 1! Snapshot baþlatýlýyor. Barkod: {barcode}");
+                                _logger.LogInformation($"plc_in deðeri 1! Snapshot baþlatýlýyor. Barkod: {barcode}");
 
                                 // Metodu tetikler ve bekletmeden çalýþmasýný saðlar
                                 _ = GetSnapshotAsync(barcode);
@@ -101,10 +103,20 @@ namespace CameraService
                 {
                     byte[] imageBytes = await response.Content.ReadAsByteArrayAsync();
 
-                    string folderPath = @"C:\Users\it.stajyer\Desktop\Fotoðraflar";
+                    // 1. Ana hedef klasör
+                    string baseFolderPath = @"C:\Users\it.stajyer\Desktop\Fotoðraflar";
 
-                    // Dosya ismini Barkod_SaatDakikaSaniye.jpg formatýnda kaydeder
-                    string fileName = Path.Combine(folderPath, $"{DateTime.Now:HH-mm-ss}.jpg");
+                    // 2. O anki zamaný al
+                    DateTime now = DateTime.Now;
+
+                    // 3. Ýç içe klasör yolunu birleþtir (Örn: ...\Fotoðraflar\2026\02\25)
+                    string targetFolderPath = Path.Combine(baseFolderPath, now.ToString("yyyy"), now.ToString("MM"), now.ToString("dd"));
+
+                    // 4. Klasör yapýsý yoksa oluþtur (Varsa hiçbir þey yapmaz, güvenlidir)
+                    Directory.CreateDirectory(targetFolderPath);
+
+                    // 5. Dosya adýný sadece saat bilgisiyle oluþtur ve tam yolu belirle
+                    string fileName = Path.Combine(targetFolderPath, $"{now:HH-mm-ss}.jpg");
 
                     await File.WriteAllBytesAsync(fileName, imageBytes);
                     _logger.LogInformation($"Snapshot baþarýyla kaydedildi: {fileName}");
