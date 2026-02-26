@@ -47,15 +47,22 @@ namespace CameraService.Workers
                 {
                     SqlDependency dependency = new SqlDependency(cmd);
                     dependency.OnChange += Dependency_OnChange;
-                    
-                    using (SqlDataReader reader = cmd.ExecuteReader()) { }
+
+                    cmd.ExecuteNonQuery();
                 }
             }
         }
 
         private void Dependency_OnChange(object sender, SqlNotificationEventArgs e)
         {
-            if (e.Type == SqlNotificationType.Change)
+            // 1. Çakışma ve sonsuz döngüyü önlemek için eski dinlemeyi sil
+            if (sender is SqlDependency dependency)
+            {
+                dependency.OnChange -= Dependency_OnChange;
+            }
+
+            // 2. Sadece geçerli ve gerçek bir değişimse veritabanına bağlan
+            if (e.Type == SqlNotificationType.Change && e.Info != SqlNotificationInfo.Invalid)
             {
                 using (SqlConnection conn = new SqlConnection(_connectionString))
                 {
@@ -73,13 +80,14 @@ namespace CameraService.Workers
                             if (plc_in)
                             {
                                 _logger.LogInformation($"plc_in değeri 1! Snapshot başlatılıyor. Barkod: {barcode}");
-                                // Handler çağrılır ve işlem delegasyonu yapılır
                                 _ = _handler.HandleAsync(barcode);
                             }
                         }
                     }
                 }
             }
+
+            // 3. Bir sonraki veriyi yakalamak için dinlemeyi tekrar kur
             DinlemeyeKayitOl();
         }
     }
