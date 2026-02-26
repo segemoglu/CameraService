@@ -7,7 +7,11 @@ var builder = Host.CreateApplicationBuilder(args);
 
 // Serilog Ayarý (Loglarý txt dosyasýna yazar)
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.File(@"C:\Users\it.stajyer\Desktop\KameraServisi\logs.txt", retainedFileCountLimit: 30, rollingInterval: RollingInterval.Day)
+    .WriteTo.File(@"C:\Users\it.stajyer\Desktop\CameraService\logs.txt", 
+    fileSizeLimitBytes: 100 * 1024 * 1024, 
+    rollOnFileSizeLimit: true, 
+    retainedFileCountLimit: 30, 
+    rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 builder.Logging.ClearProviders();
