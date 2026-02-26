@@ -1,16 +1,21 @@
 using CameraService.Features;
-using CameraService.Workers;
-using System.Net;
+using CameraService.Features.SnapshotCapture;
 using Serilog;
+using System.Net;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Serilog Ayarý (Loglarý txt dosyasýna yazar)
+// Ayarlarý al
+var config = builder.Configuration;
+var username = config["CameraSettings:Username"];
+var password = config["CameraSettings:Password"];
+var logPath = config["StorageSettings:LogPath"] ?? @"C:\logs.txt"; // Dosyadan log yolunu oku
+
+// Serilog Ayarý
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.File(@"C:\Users\it.stajyer\Desktop\CameraService\logs.txt", 
-    fileSizeLimitBytes: 100 * 1024 * 1024, 
-    rollOnFileSizeLimit: true, 
-    retainedFileCountLimit: 30, 
+    .WriteTo.File(logPath, // Hardcoded yol yerine deðiþkeni kullan    fileSizeLimitBytes: 10 * 1024 * 1024,
+    rollOnFileSizeLimit: true,
+    retainedFileCountLimit: 7,
     rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
@@ -22,18 +27,16 @@ builder.Services.AddWindowsService(options =>
     options.ServiceName = "CameraService";
 });
 
-// HttpClient ve NetworkCredential (Sadece 1 kere yapýlandýrýlýr)
+// HttpClient ve Kimlik Doðrulama
 builder.Services.AddHttpClient<ICameraClient, CameraClient>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        Credentials = new NetworkCredential("YOUR_CAMERA_USERNAME", "YOUR_CAMERA_PASSWORD")
+        Credentials = new NetworkCredential(username, password)
     });
 
-// Feature Sýnýflarýnýn Kayýtlarý
+// VSA Özellik Baðýmlýlýklarý
 builder.Services.AddSingleton<IImageStorage, LocalImageStorage>();
 builder.Services.AddSingleton<SnapshotCaptureHandler>();
-
-// Worker Kaydý
 builder.Services.AddHostedService<DatabaseTriggerWorker>();
 
 var host = builder.Build();
