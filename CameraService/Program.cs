@@ -2,6 +2,7 @@ using CameraService.Features;
 using CameraService.Features.SnapshotCapture;
 using Serilog;
 using System.Net;
+using Microsoft.EntityFrameworkCore;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -33,6 +34,9 @@ builder.Services.AddHttpClient<ICameraClient, CameraClient>()
     {
         Credentials = new NetworkCredential(username, password)
     });
+
+var connectionString = config.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 
 // VSA Özellik Baðýmlýlýklarý
 builder.Services.AddSingleton<IImageStorage, LocalImageStorage>();
