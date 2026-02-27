@@ -26,18 +26,18 @@ namespace CameraService.Features.SnapshotCapture
 
             while (!islemBasarili)
             {
-                try
+                using (var scope = _scopeFactory.CreateScope())
                 {
-                    using (var scope = _scopeFactory.CreateScope())
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+                    using (var transaction = await db.Database.BeginTransactionAsync())
                     {
-                        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                        var kayit = await db.BarcodeTracking.FindAsync(id);
-
-                        if (kayit != null)
+                        try
                         {
+                            var kayit = await db.BarcodeTracking.FindAsync(id);
+                            if (kayit == null) break;
                             kayit.pc_in = true;
-
-                            // Kameraya bağlanmayı dene
+                            
                             byte[]? imageBytes = await _cameraClient.GetSnapshotBytesAsync();
 
                             if (imageBytes == null || imageBytes.Length == 0)
@@ -46,26 +46,19 @@ namespace CameraService.Features.SnapshotCapture
                             }
 
                             await _imageStorage.SaveImageAsync(imageBytes, barcode);
-
-                            
                             kayit.pc_out = true;
                             await db.SaveChangesAsync();
-
+                            await transaction.CommitAsync();
                             islemBasarili = true; // Başarılıysa döngüden çıkmak için true yap
                             _logger.LogInformation($"[{id}] İşlem başarılı: pc_in ve pc_out DB'ye yazıldı.");
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            // Kayıt veritabanında yoksa boşuna denememek için döngüyü kır
-                            break;
+                            await transaction.RollbackAsync();
+                            _logger.LogError($"[{id}] HATA: {ex.Message} -> Veritabanına hiçbir şey yazılmadı (İşlem iptal).");
+                            await Task.Delay(1000);// Kamerayı boğmamak için 1 saniye nefes payı
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError($"[{id}] HATA: {ex.Message} -> Veritabanına hiçbir şey yazılmadı (İşlem iptal).");
-
-                    await Task.Delay(1000);// Kamerayı boğmamak için 1 saniye nefes payı
                 }
             }
         }
