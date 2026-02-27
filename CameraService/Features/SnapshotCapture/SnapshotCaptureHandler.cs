@@ -22,63 +22,50 @@ namespace CameraService.Features.SnapshotCapture
 
         public async Task HandleAsync(int id, string barcode)
         {
-            try
+            bool islemBasarili = false;
+
+            while (!islemBasarili)
             {
-                // 1. ADIM: İşlemi Kilitle (pc_in = true yap)
-                using (var scope = _scopeFactory.CreateScope())
+                try
                 {
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    var kayit = await db.BarcodeTracking.FindAsync(id);
-                    if (kayit != null)
-                    {
-                        kayit.pc_in = true;
-                        await db.SaveChangesAsync();
-                        _logger.LogInformation($"[{id}] EF Core: pc_in = 1 yapıldı.");
-                    }
-                }
-
-                // 2. ADIM: Ağ ve Disk I/O (Veritabanı kilitli değil, güvenli bölge)
-                byte[]? imageBytes = await _cameraClient.GetSnapshotBytesAsync();
-
-                if (imageBytes != null && imageBytes.Length > 0)
-                {
-                    await _imageStorage.SaveImageAsync(imageBytes, barcode);
-
-                    // 3. ADIM: Başarılıysa İşi Bitir (pc_out = true yap)
                     using (var scope = _scopeFactory.CreateScope())
                     {
                         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                         var kayit = await db.BarcodeTracking.FindAsync(id);
+
                         if (kayit != null)
                         {
+                            kayit.pc_in = true;
+
+                            // Kameraya bağlanmayı dene
+                            byte[]? imageBytes = await _cameraClient.GetSnapshotBytesAsync();
+
+                            if (imageBytes == null || imageBytes.Length == 0)
+                            {
+                                throw new Exception("Kameradan veri alınamadı!");
+                            }
+
+                            await _imageStorage.SaveImageAsync(imageBytes, barcode);
+
+                            
                             kayit.pc_out = true;
                             await db.SaveChangesAsync();
-                            _logger.LogInformation($"[{id}] EF Core: Fotoğraf diske kaydedildi ve pc_out = 1 yapıldı.");
+
+                            islemBasarili = true; // Başarılıysa döngüden çıkmak için true yap
+                            _logger.LogInformation($"[{id}] İşlem başarılı: pc_in ve pc_out DB'ye yazıldı.");
+                        }
+                        else
+                        {
+                            // Kayıt veritabanında yoksa boşuna denememek için döngüyü kır
+                            break;
                         }
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    // Kamera boş dönerse zorla hata fırlat ki CATCH bloğu çalışsın
-                    throw new Exception("Kameradan veri alınamadı!");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"[{id}] HATA: {ex.Message} -> İşlem geri alınıyor (Rollback)!");
+                    _logger.LogError($"[{id}] HATA: {ex.Message} -> Veritabanına hiçbir şey yazılmadı (İşlem iptal).");
 
-                // HATA DURUMU (Rollback): İş verenin isteği üzerine her şeyi 0'a (false) çekiyoruz
-                using (var scope = _scopeFactory.CreateScope())
-                {
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    var kayit = await db.BarcodeTracking.FindAsync(id);
-                    if (kayit != null)
-                    {
-                        kayit.pc_in = false;
-                        kayit.pc_out = false;
-                        await db.SaveChangesAsync();
-                        _logger.LogWarning($"[{id}] EF Core: Kayıtlar sıfırlandı.");
-                    }
+                    await Task.Delay(1000);// Kamerayı boğmamak için 1 saniye nefes payı
                 }
             }
         }
